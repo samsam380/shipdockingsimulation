@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cruise Ship Docking Trainer</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Cruise Ship Docking Trainer</h1>
+    <p>Bridge-grade browser simulation for harbor approach, set-down, and berthing.</p>
+  </header>
+
+  <main>
+    <section class="sim-panel">
+      <canvas id="simCanvas" width="1200" height="700" aria-label="Docking simulation"></canvas>
+      <div class="legend">
+        <span><i class="legend-dot ship"></i> Own ship</span>
+        <span><i class="legend-dot berth"></i> Berth</span>
+        <span><i class="legend-dot safety"></i> Safety corridor</span>
+      </div>
+    </section>
+
+    <section class="controls">
+      <div class="card">
+        <h2>Scenario</h2>
+        <label>
+          Environment
+          <select id="scenarioSelect"></select>
+        </label>
+        <button id="resetBtn">Reset Scenario</button>
+      </div>
+
+      <div class="card">
+        <h2>Propulsion</h2>
+        <label>Engine Telegraph
+          <input type="range" min="-100" max="100" value="0" id="throttle" />
+          <output id="throttleOut">0%</output>
+        </label>
+        <label>Rudder
+          <input type="range" min="-35" max="35" value="0" id="rudder" />
+          <output id="rudderOut">0°</output>
+        </label>
+        <label>Bow Thruster
+          <input type="range" min="-100" max="100" value="0" id="thruster" />
+          <output id="thrusterOut">0%</output>
+        </label>
+      </div>
+
+      <div class="card">
+        <h2>Bridge Instruments</h2>
+        <dl id="instruments"></dl>
+      </div>
+
+      <div class="card">
+        <h2>Controls</h2>
+        <ul>
+          <li><kbd>W/S</kbd> Engine telegraph + / −</li>
+          <li><kbd>A/D</kbd> Rudder port / starboard</li>
+          <li><kbd>Q/E</kbd> Bow thruster port / starboard</li>
+          <li><kbd>Space</kbd> Midships + stop thruster</li>
+        </ul>
+      </div>
+
+      <div class="card score-card">
+        <h2>Training Evaluation</h2>
+        <p id="statusText">Approach berth at &lt; 0.3 kn with heading error &lt; 5°.</p>
+        <p id="scoreText">Score: --</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    Educational simulator. For procedural familiarization only; not a substitute for certified bridge simulator programs.
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
