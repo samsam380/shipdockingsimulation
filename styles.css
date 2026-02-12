@@ -5,6 +5,7 @@
   --text: #e8f4ff;
   --accent: #47d2ff;
   --warning: #ffd166;
+  --success: #95f9a3;
 }
 
 * { box-sizing: border-box; }
@@ -19,7 +20,7 @@ header, footer {
   padding: 1rem;
 }
 header h1 { margin: 0; font-size: 1.7rem; }
-header p { margin: 0.5rem 0 0; opacity: 0.88; }
+header p { margin: 0.5rem 0 0; opacity: 0.85; }
 
 main {
   display: grid;
@@ -28,14 +29,12 @@ main {
   padding: 0 1rem 1rem;
 }
 
-.sim-panel, .card {
-  background: rgba(16, 33, 51, 0.86);
+.sim-panel {
+  background: rgba(16, 33, 51, 0.75);
   border: 1px solid #2d4e67;
   border-radius: 12px;
+  padding: 0.75rem;
 }
-.sim-panel { padding: 0.75rem; }
-.card { padding: 0.75rem; }
-
 canvas {
   width: 100%;
   height: auto;
@@ -45,7 +44,6 @@ canvas {
 }
 .legend {
   display: flex;
-  flex-wrap: wrap;
   gap: 1rem;
   margin-top: 0.4rem;
   font-size: 0.85rem;
@@ -60,11 +58,16 @@ canvas {
 .legend-dot.ship { background: #f9f9f9; }
 .legend-dot.berth { background: #ffa600; }
 .legend-dot.safety { background: #66e0ff; }
-.legend-dot.track { background: #7cff9d; }
 
 .controls {
   display: grid;
   gap: 0.8rem;
+}
+.card {
+  background: rgba(16, 33, 51, 0.86);
+  border: 1px solid #2d4e67;
+  border-radius: 12px;
+  padding: 0.75rem;
 }
 .card h2 {
   margin: 0 0 0.6rem;
@@ -107,7 +110,7 @@ kbd {
 }
 footer {
   font-size: 0.8rem;
-  opacity: 0.8;
+  opacity: 0.75;
 }
 
 @media (max-width: 1200px) {
