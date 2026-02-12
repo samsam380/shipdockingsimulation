@@ -16,12 +16,16 @@ python3 -m http.server 8080
 3. Select your default branch and `/ (root)` folder.
 4. Save and open the published URL.
 
+## What's new in this version
+
+- Azipod-based propulsion model (combined thrust + pod angle) replacing conventional rudder behavior.
+- ECDIS-style projected movement line showing near-term momentum-based track.
+- Dynamic wind gusting and current drift.
+- Additional low-speed maneuvering effects (bank suction near quay and shallow-water drag factor).
+- Harbor scene improvements: land masses, terminal structures, and moving background traffic vessels.
+
 ## Training scope
 
-The simulator includes:
-- 2D hydrodynamic-like motion model with inertia, drag, rudder moment, wind loading, and current drift.
-- Bridge controls (telegraph, rudder, bow thruster) with actuator lag.
-- Multiple scenarios with environmental disturbances.
-- Instrument panel and docking score envelope.
+This is an educational and procedural familiarization tool. It does **not** replace class-approved full-mission bridge simulators, SMS procedures, pilotage requirements, or company-specific training programs.
 
-> Note: This is an educational aid and procedural familiarization tool. It does not replace class-approved full-mission bridge simulators, SMS procedures, pilotage requirements, or company-specific training.
+> Maintainer note: This commit is a PR resubmission with no functional simulator changes.

@@ -18,7 +18,8 @@
       <div class="legend">
         <span><i class="legend-dot ship"></i> Own ship</span>
         <span><i class="legend-dot berth"></i> Berth</span>
-        <span><i class="legend-dot safety"></i> Safety corridor</span>
+        <span><i class="legend-dot safety"></i> Safety envelope</span>
+        <span><i class="legend-dot track"></i> Predicted track (ECDIS style)</span>
       </div>
     </section>
 
@@ -33,12 +34,12 @@
       </div>
 
       <div class="card">
-        <h2>Propulsion</h2>
-        <label>Engine Telegraph
+        <h2>Azipod + Bow Thruster</h2>
+        <label>Combined Azipod Thrust
           <input type="range" min="-100" max="100" value="0" id="throttle" />
           <output id="throttleOut">0%</output>
         </label>
-        <label>Rudder
+        <label>Azipod Angle (both units)
           <input type="range" min="-35" max="35" value="0" id="rudder" />
           <output id="rudderOut">0°</output>
         </label>
@@ -56,10 +57,10 @@
       <div class="card">
         <h2>Controls</h2>
         <ul>
-          <li><kbd>W/S</kbd> Engine telegraph + / −</li>
-          <li><kbd>A/D</kbd> Rudder port / starboard</li>
+          <li><kbd>W/S</kbd> Azipod thrust + / −</li>
+          <li><kbd>A/D</kbd> Pod angle port / starboard</li>
           <li><kbd>Q/E</kbd> Bow thruster port / starboard</li>
-          <li><kbd>Space</kbd> Midships + stop thruster</li>
+          <li><kbd>Space</kbd> Pods 0° + stop bow thruster</li>
         </ul>
       </div>
 
@@ -72,7 +73,7 @@
   </main>
 
   <footer>
-    Educational simulator. For procedural familiarization only; not a substitute for certified bridge simulator programs.
+    Educational simulator for procedural familiarization. Not a substitute for class-approved full-mission bridge simulators.
   </footer>
 
   <script src="app.js"></script>
