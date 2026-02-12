@@ -92,6 +92,14 @@ let dockingScored = false;
 function degToRad(d) { return (d * Math.PI) / 180; }
 function radToDeg(r) { return (r * 180) / Math.PI; }
 function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
+function normalizeAngleDeg(a) {
+  let out = ((a + 180) % 360 + 360) % 360 - 180;
+  if (out === -180) out = 180;
+  return out;
+}
+function shortestAngleDeltaDeg(target, current) {
+  return normalizeAngleDeg(target - current);
+}
 
 function worldToShipFrame(vx, vy, heading = ship.heading) {
   const c = Math.cos(heading);
@@ -131,7 +139,8 @@ function resetScenario() {
 
 function setOutputs() {
   throttleOut.value = `${ship.thrustCmd.toFixed(0)}%`;
-  rudderOut.value = `${ship.podAngleCmd.toFixed(0)}°`;
+  rudderOut.value = `${normalizeAngleDeg(ship.podAngleCmd).toFixed(0)}°`;
+  rudderInput.value = normalizeAngleDeg(ship.podAngleCmd);
   thrusterOut.value = `${ship.thrusterCmd.toFixed(0)}%`;
 }
 
@@ -200,7 +209,8 @@ function getForces(state, scenario, tSeconds) {
 
 function integrate(dt, tSeconds) {
   ship.thrustLag += (ship.thrustCmd - ship.thrustLag) * dt * 0.32;
-  ship.podAngleLag += (ship.podAngleCmd - ship.podAngleLag) * dt * 0.9;
+  const podDelta = shortestAngleDeltaDeg(ship.podAngleCmd, ship.podAngleLag);
+  ship.podAngleLag = normalizeAngleDeg(ship.podAngleLag + podDelta * dt * 1.3);
   ship.thrusterLag += (ship.thrusterCmd - ship.thrusterLag) * dt * 1.8;
 
   const { ax, ay, yawAcc } = getForces(ship, activeScenario, tSeconds);
@@ -485,7 +495,7 @@ function bindControl(input, setter) {
 }
 
 bindControl(throttleInput, (v) => { ship.thrustCmd = v; });
-bindControl(rudderInput, (v) => { ship.podAngleCmd = v; });
+bindControl(rudderInput, (v) => { ship.podAngleCmd = normalizeAngleDeg(v); });
 bindControl(thrusterInput, (v) => { ship.thrusterCmd = v; });
 
 scenarioSelect.addEventListener('change', resetScenario);
@@ -495,8 +505,8 @@ window.addEventListener('keydown', (e) => {
   if (e.repeat) return;
   if (e.key.toLowerCase() === 'w') ship.thrustCmd = clamp(ship.thrustCmd + 10, -100, 100);
   if (e.key.toLowerCase() === 's') ship.thrustCmd = clamp(ship.thrustCmd - 10, -100, 100);
-  if (e.key.toLowerCase() === 'a') ship.podAngleCmd = clamp(ship.podAngleCmd - 5, -35, 35);
-  if (e.key.toLowerCase() === 'd') ship.podAngleCmd = clamp(ship.podAngleCmd + 5, -35, 35);
+  if (e.key.toLowerCase() === 'a') ship.podAngleCmd = normalizeAngleDeg(ship.podAngleCmd - 5);
+  if (e.key.toLowerCase() === 'd') ship.podAngleCmd = normalizeAngleDeg(ship.podAngleCmd + 5);
   if (e.key.toLowerCase() === 'q') ship.thrusterCmd = clamp(ship.thrusterCmd - 10, -100, 100);
   if (e.key.toLowerCase() === 'e') ship.thrusterCmd = clamp(ship.thrusterCmd + 10, -100, 100);
   if (e.code === 'Space') {

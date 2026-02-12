@@ -19,6 +19,7 @@ python3 -m http.server 8080
 ## What's new in this version
 
 - Azipod-based propulsion model (combined thrust + pod angle) replacing conventional rudder behavior.
+- Full 360° azipod rotation control (-180° to +180° command range).
 - ECDIS-style projected movement line showing near-term momentum-based track.
 - Dynamic wind gusting and current drift.
 - Additional low-speed maneuvering effects (bank suction near quay and shallow-water drag factor).
@@ -28,4 +29,3 @@ python3 -m http.server 8080
 
 This is an educational and procedural familiarization tool. It does **not** replace class-approved full-mission bridge simulators, SMS procedures, pilotage requirements, or company-specific training programs.
 
-> Maintainer note: This commit is a PR resubmission with no functional simulator changes.
