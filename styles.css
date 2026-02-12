@@ -1,0 +1,115 @@
+:root {
+  --bg: #08121d;
+  --panel: #102133;
+  --panel-soft: #173049;
+  --text: #e8f4ff;
+  --accent: #47d2ff;
+  --warning: #ffd166;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
+  color: var(--text);
+  background: radial-gradient(circle at 20% 5%, #15334e, var(--bg));
+}
+header, footer {
+  text-align: center;
+  padding: 1rem;
+}
+header h1 { margin: 0; font-size: 1.7rem; }
+header p { margin: 0.5rem 0 0; opacity: 0.88; }
+
+main {
+  display: grid;
+  grid-template-columns: minmax(680px, 2.3fr) minmax(340px, 1fr);
+  gap: 1rem;
+  padding: 0 1rem 1rem;
+}
+
+.sim-panel, .card {
+  background: rgba(16, 33, 51, 0.86);
+  border: 1px solid #2d4e67;
+  border-radius: 12px;
+}
+.sim-panel { padding: 0.75rem; }
+.card { padding: 0.75rem; }
+
+canvas {
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+  border: 1px solid #2d4e67;
+  background: #1b4e67;
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+}
+.legend-dot {
+  display: inline-block;
+  width: 0.8rem;
+  height: 0.8rem;
+  margin-right: 0.2rem;
+  border-radius: 50%;
+}
+.legend-dot.ship { background: #f9f9f9; }
+.legend-dot.berth { background: #ffa600; }
+.legend-dot.safety { background: #66e0ff; }
+.legend-dot.track { background: #7cff9d; }
+
+.controls {
+  display: grid;
+  gap: 0.8rem;
+}
+.card h2 {
+  margin: 0 0 0.6rem;
+  font-size: 1rem;
+  color: var(--accent);
+}
+label {
+  display: grid;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+}
+input[type="range"], select, button {
+  width: 100%;
+}
+button {
+  background: var(--accent);
+  color: #012233;
+  border: 0;
+  border-radius: 8px;
+  padding: 0.5rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+output { font-size: 0.85rem; color: var(--warning); }
+dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.25rem 0.6rem;
+  font-size: 0.9rem;
+}
+.score-card p { margin: 0.25rem 0; }
+kbd {
+  background: var(--panel-soft);
+  border: 1px solid #2d4e67;
+  border-bottom-width: 3px;
+  border-radius: 5px;
+  padding: 0.05rem 0.35rem;
+}
+footer {
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+@media (max-width: 1200px) {
+  main { grid-template-columns: 1fr; }
+}
