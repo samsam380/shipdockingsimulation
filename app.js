@@ -193,10 +193,12 @@ function getForces(state, scenario, tSeconds) {
   const fxShip = podFx + hydroDragX + windForceX + squatDrag;
   const fyShip = podFy + thrusterForce + hydroDragY + windForceY + bankSuction;
 
-  const podMoment = podFy * (state.lengthM * 0.35);
+  const podMoment = podFy * (state.lengthM * 0.30);
   const windMoment = windForceY * (state.lengthM * 0.17);
-  const yawDamping = -state.yawRate * Math.abs(state.yawRate) * inertia * 0.0008;
-  const yawMoment = podMoment + windMoment + yawDamping + yawBankMoment;
+  const yawLinearDamping = -state.yawRate * inertia * 0.09;
+  const yawQuadraticDamping = -state.yawRate * Math.abs(state.yawRate) * inertia * 0.0014;
+  const keelStabilityMoment = -relShip.v * state.lengthM * 210000;
+  const yawMoment = podMoment + windMoment + yawLinearDamping + yawQuadraticDamping + keelStabilityMoment + yawBankMoment;
 
   const forceWorld = shipToWorldFrame(fxShip, fyShip, state.heading);
   return {
@@ -221,6 +223,9 @@ function integrate(dt, tSeconds) {
   ship.x += ship.vx * dt * PX_PER_M;
   ship.y += ship.vy * dt * PX_PER_M;
   ship.heading += ship.yawRate * dt;
+
+  const lowSpeedYawBrake = clamp(1 - Math.hypot(ship.vx, ship.vy) / 1.8, 0, 1);
+  ship.yawRate *= 1 - (0.002 + lowSpeedYawBrake * 0.016);
 
   ship.vx *= 0.999;
   ship.vy *= 0.999;

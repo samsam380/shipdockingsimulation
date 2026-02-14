@@ -23,6 +23,7 @@ python3 -m http.server 8080
 - ECDIS-style projected movement line showing near-term momentum-based track.
 - Dynamic wind gusting and current drift.
 - Additional low-speed maneuvering effects (bank suction near quay and shallow-water drag factor).
+- Improved rotational hydrodynamic damping/stability so heading rate naturally decays after turn commands are neutralized.
 - Harbor scene improvements: land masses, terminal structures, and moving background traffic vessels.
 
 ## Training scope
