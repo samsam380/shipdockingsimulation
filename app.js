@@ -12,8 +12,12 @@ const thrusterOut = document.getElementById('thrusterOut');
 const instruments = document.getElementById('instruments');
 const statusText = document.getElementById('statusText');
 const scoreText = document.getElementById('scoreText');
+const modelNotes = document.getElementById('modelNotes');
 
 const PX_PER_M = 1.3;
+const KNOT_TO_MS = 0.514444;
+const MS_TO_KNOT = 1.94384;
+const AIR_DENSITY = 1.225;
 
 const scenarios = [
   {
@@ -23,6 +27,8 @@ const scenarios = [
     currentKts: 0.3,
     currentDirDeg: 15,
     gustKts: 2,
+    waterDepthM: 14.5,
+    bankX: 1060,
     start: { x: 180, y: 335, hdg: 2 },
     berth: { x: 960, y: 350, hdg: 0, length: 320, width: 46 },
     traffic: [
@@ -37,6 +43,8 @@ const scenarios = [
     currentKts: 0.9,
     currentDirDeg: 175,
     gustKts: 5,
+    waterDepthM: 12.2,
+    bankX: 1060,
     start: { x: 165, y: 520, hdg: -8 },
     berth: { x: 950, y: 455, hdg: 0, length: 320, width: 46 },
     traffic: [
@@ -51,6 +59,8 @@ const scenarios = [
     currentKts: 1.2,
     currentDirDeg: 25,
     gustKts: 4,
+    waterDepthM: 10.8,
+    bankX: 1060,
     start: { x: 215, y: 185, hdg: 9 },
     berth: { x: 940, y: 250, hdg: 0, length: 320, width: 46 },
     traffic: [
@@ -71,9 +81,19 @@ const ship = {
   beamM: 40,
   draftM: 8.8,
   displacementT: 130000,
+  blockCoefficient: 0.68,
+  lateralWindAreaM2: 7600,
+  frontalWindAreaM2: 1400,
+  maxAzipodThrustN: 6400000,
+  maxAsternFraction: 0.72,
+  bowThrusterMaxN: 1100000,
+  bowThrusterLeverM: 124,
+  podLeverM: -104,
   x: 0,
   y: 0,
   heading: 0,
+  u: 0,
+  v: 0,
   vx: 0,
   vy: 0,
   yawRate: 0,
@@ -82,7 +102,8 @@ const ship = {
   thrusterCmd: 0,
   thrustLag: 0,
   podAngleLag: 0,
-  thrusterLag: 0
+  thrusterLag: 0,
+  lastForces: null
 };
 
 let activeScenario = scenarios[0];
@@ -113,11 +134,50 @@ function shipToWorldFrame(fx, fy, heading = ship.heading) {
   return { x: c * fx - s * fy, y: s * fx + c * fy };
 }
 
+function getCurrentVector(scenario) {
+  const currentDir = degToRad(scenario.currentDirDeg);
+  const curSpeed = scenario.currentKts * KNOT_TO_MS;
+  return { x: Math.cos(currentDir) * curSpeed, y: Math.sin(currentDir) * curSpeed };
+}
+
+function getWindVector(scenario, tSeconds) {
+  const gust = Math.sin(tSeconds * 0.12) * scenario.gustKts + Math.sin(tSeconds * 0.031 + 1.8) * scenario.gustKts * 0.35;
+  const windKtsDynamic = Math.max(0, scenario.windKts + gust);
+  const windDir = degToRad(scenario.windDirDeg);
+  const windSpeed = windKtsDynamic * KNOT_TO_MS;
+  return { x: Math.cos(windDir) * windSpeed, y: Math.sin(windDir) * windSpeed, windKtsDynamic };
+}
+
+function effectiveMass(state) {
+  const mass = state.displacementT * 1000;
+  return {
+    surge: mass * 1.06,
+    sway: mass * 1.82,
+    yaw: mass * Math.pow(state.lengthM * 0.33, 2) * 1.24
+  };
+}
+
+function depthFactors(state, scenario) {
+  const depthDraftRatio = scenario.waterDepthM / state.draftM;
+  const shallow = clamp((2.5 - depthDraftRatio) / 1.5, 0, 1);
+  const ukcM = scenario.waterDepthM - state.draftM;
+  return {
+    depthDraftRatio,
+    ukcM,
+    shallow,
+    dampingMultiplier: 1 + shallow * 0.85,
+    steeringMultiplier: 1 - shallow * 0.28,
+    squatM: state.blockCoefficient * Math.max(0, state.u) * Math.max(0, state.u) / Math.max(0.1, 100 * ukcM / state.draftM)
+  };
+}
+
 function resetScenario() {
   activeScenario = scenarios[scenarioSelect.selectedIndex];
   ship.x = activeScenario.start.x;
   ship.y = activeScenario.start.y;
   ship.heading = degToRad(activeScenario.start.hdg);
+  ship.u = 0;
+  ship.v = 0;
   ship.vx = 0;
   ship.vy = 0;
   ship.yawRate = 0;
@@ -127,6 +187,7 @@ function resetScenario() {
   ship.thrustLag = 0;
   ship.podAngleLag = 0;
   ship.thrusterLag = 0;
+  ship.lastForces = null;
 
   traffic = activeScenario.traffic.map((v) => ({ ...v, heading: degToRad(v.heading) }));
 
@@ -145,93 +206,103 @@ function setOutputs() {
 }
 
 function getForces(state, scenario, tSeconds) {
-  const mass = state.displacementT * 1000;
-  const inertia = mass * Math.pow(state.lengthM * 0.33, 2);
-
-  const gust = Math.sin(tSeconds * 0.12) * scenario.gustKts;
-  const windKtsDynamic = scenario.windKts + gust;
-
-  const windDir = degToRad(scenario.windDirDeg);
-  const windSpeed = windKtsDynamic * 0.5144;
-  const relWindAngle = windDir - state.heading;
-  const windLateral = Math.sin(relWindAngle) * windSpeed;
-  const windLong = Math.cos(relWindAngle) * windSpeed;
-
-  const currentDir = degToRad(scenario.currentDirDeg);
-  const curSpeed = scenario.currentKts * 0.5144;
-  const currentVX = Math.cos(currentDir) * curSpeed;
-  const currentVY = Math.sin(currentDir) * curSpeed;
-
-  const relVX = state.vx - currentVX;
-  const relVY = state.vy - currentVY;
-  const relShip = worldToShipFrame(relVX, relVY, state.heading);
+  const masses = effectiveMass(state);
+  const depth = depthFactors(state, scenario);
+  const current = getCurrentVector(scenario);
+  const wind = getWindVector(scenario, tSeconds);
+  const shipWaterWorld = shipToWorldFrame(state.u, state.v, state.heading);
+  const groundVelocity = { x: shipWaterWorld.x + current.x, y: shipWaterWorld.y + current.y };
+  const apparentWindWorld = { x: wind.x - groundVelocity.x, y: wind.y - groundVelocity.y };
+  const apparentWind = worldToShipFrame(apparentWindWorld.x, apparentWindWorld.y, state.heading);
 
   const podAngleRad = degToRad(state.podAngleLag);
-  const podForce = state.thrustLag * 480000;
-  const podFx = Math.cos(podAngleRad) * podForce;
-  const podFy = Math.sin(podAngleRad) * podForce;
+  const thrustOrder = state.thrustLag / 100;
+  const thrustAvailability = thrustOrder >= 0 ? 1 : state.maxAsternFraction;
+  const podForce = thrustOrder * thrustAvailability * state.maxAzipodThrustN;
+  const podFx = Math.cos(podAngleRad) * podForce * depth.steeringMultiplier;
+  const podFy = Math.sin(podAngleRad) * podForce * depth.steeringMultiplier;
 
-  const thrusterForce = state.thrusterLag * 7800;
+  const transverseWaterSpeed = Math.abs(state.v + state.yawRate * state.bowThrusterLeverM);
+  const thrusterVentilationLoss = clamp(transverseWaterSpeed / 2.5, 0, 0.62);
+  const thrusterForce = (state.thrusterLag / 100) * state.bowThrusterMaxN * (1 - thrusterVentilationLoss) * depth.steeringMultiplier;
 
-  const hydroDragX = -Math.sign(relShip.u) * relShip.u * relShip.u * 98000;
-  const hydroDragY = -Math.sign(relShip.v) * relShip.v * relShip.v * 320000;
+  const hullDampingX = depth.dampingMultiplier * (-520000 * state.u - 460000 * state.u * Math.abs(state.u));
+  const hullDampingY = depth.dampingMultiplier * (-7600000 * state.v - 18500000 * state.v * Math.abs(state.v));
+  const yawDampingMoment = depth.dampingMultiplier * (-masses.yaw * (0.038 * state.yawRate + 1.15 * state.yawRate * Math.abs(state.yawRate)));
+  const crossflowMoment = -state.v * state.lengthM * 5200000 - state.yawRate * Math.abs(state.u) * masses.yaw * 0.015;
 
-  const windAreaLat = state.lengthM * (state.draftM * 2.9);
-  const windAreaLon = state.beamM * (state.draftM * 2.2);
-  const windForceY = 0.5 * 1.225 * windAreaLat * 1.18 * windLateral * Math.abs(windLateral);
-  const windForceX = 0.5 * 1.225 * windAreaLon * 0.85 * windLong * Math.abs(windLong);
+  const windForceX = 0.5 * AIR_DENSITY * state.frontalWindAreaM2 * 0.85 * apparentWind.u * Math.abs(apparentWind.u);
+  const windForceY = 0.5 * AIR_DENSITY * state.lateralWindAreaM2 * 1.08 * apparentWind.v * Math.abs(apparentWind.v);
+  const windMoment = windForceY * state.lengthM * 0.13 + windForceX * state.beamM * 0.03;
 
-  const berthX = scenario.berth.x;
-  const distToPier = Math.max(20, Math.abs(berthX + 140 - state.x));
-  const bankFactor = clamp(1 - distToPier / 280, 0, 1);
-  const bankSuction = bankFactor * -62000 * Math.sign(relShip.v || 1);
-  const yawBankMoment = bankFactor * -3.4e7 * Math.sign(relShip.v || 1);
+  const bankDistanceM = Math.max(8, Math.abs(scenario.bankX - state.x) / PX_PER_M);
+  const bankFactor = clamp(1 - bankDistanceM / (state.beamM * 3.2), 0, 1);
+  const bankDirection = Math.sign(scenario.bankX - state.x || 1);
+  const bankSuction = bankDirection * bankFactor * (140000 + 320000 * state.u * Math.abs(state.u));
+  const yawBankMoment = -bankDirection * bankFactor * (7.5e7 + 2.6e8 * Math.abs(state.u));
 
-  const shallowFactor = clamp(1 - (state.y / canvas.height), 0, 1) * 0.2;
-  const squatDrag = -Math.sign(relShip.u) * shallowFactor * relShip.u * relShip.u * 25000;
+  const X = podFx + hullDampingX + windForceX;
+  const Y = podFy + thrusterForce + hullDampingY + windForceY + bankSuction;
+  const N =
+    podFy * state.podLeverM +
+    thrusterForce * state.bowThrusterLeverM +
+    windMoment +
+    yawDampingMoment +
+    crossflowMoment +
+    yawBankMoment;
 
-  const fxShip = podFx + hydroDragX + windForceX + squatDrag;
-  const fyShip = podFy + thrusterForce + hydroDragY + windForceY + bankSuction;
-
-  const podMoment = podFy * (state.lengthM * 0.30);
-  const windMoment = windForceY * (state.lengthM * 0.17);
-  const yawLinearDamping = -state.yawRate * inertia * 0.09;
-  const yawQuadraticDamping = -state.yawRate * Math.abs(state.yawRate) * inertia * 0.0014;
-  const keelStabilityMoment = -relShip.v * state.lengthM * 210000;
-  const yawMoment = podMoment + windMoment + yawLinearDamping + yawQuadraticDamping + keelStabilityMoment + yawBankMoment;
-
-  const forceWorld = shipToWorldFrame(fxShip, fyShip, state.heading);
   return {
-    ax: forceWorld.x / mass,
-    ay: forceWorld.y / mass,
-    yawAcc: yawMoment / inertia,
-    windKtsDynamic
+    uAcc: X / masses.surge + state.v * state.yawRate,
+    vAcc: Y / masses.sway - state.u * state.yawRate,
+    yawAcc: N / masses.yaw,
+    groundVelocity,
+    current,
+    windKtsDynamic: wind.windKtsDynamic,
+    apparentWind,
+    depth,
+    bankFactor,
+    thrusterVentilationLoss,
+    forces: { X, Y, N }
   };
 }
 
+function stepState(state, scenario, dt, tSeconds, mutateActuators = true) {
+  if (mutateActuators) {
+    state.thrustLag += (state.thrustCmd - state.thrustLag) * clamp(dt / 7.5, 0, 1);
+    const podDelta = shortestAngleDeltaDeg(state.podAngleCmd, state.podAngleLag);
+    const maxPodStep = 2.8 * dt;
+    state.podAngleLag = normalizeAngleDeg(state.podAngleLag + clamp(podDelta, -maxPodStep, maxPodStep));
+    state.thrusterLag += (state.thrusterCmd - state.thrusterLag) * clamp(dt / 2.2, 0, 1);
+  }
+
+  const model = getForces(state, scenario, tSeconds);
+  state.u += model.uAcc * dt;
+  state.v += model.vAcc * dt;
+  state.yawRate += model.yawAcc * dt;
+
+  state.yawRate = clamp(state.yawRate, degToRad(-18 / 60), degToRad(18 / 60));
+  state.u = clamp(state.u, -2.5, 5.0);
+  state.v = clamp(state.v, -1.4, 1.4);
+  state.heading += state.yawRate * dt;
+
+  const current = getCurrentVector(scenario);
+  const shipWaterWorld = shipToWorldFrame(state.u, state.v, state.heading);
+  state.vx = shipWaterWorld.x + current.x;
+  state.vy = shipWaterWorld.y + current.y;
+  state.x += state.vx * dt * PX_PER_M;
+  state.y += state.vy * dt * PX_PER_M;
+  state.lastForces = model;
+}
+
 function integrate(dt, tSeconds) {
-  ship.thrustLag += (ship.thrustCmd - ship.thrustLag) * dt * 0.32;
-  const podDelta = shortestAngleDeltaDeg(ship.podAngleCmd, ship.podAngleLag);
-  ship.podAngleLag = normalizeAngleDeg(ship.podAngleLag + podDelta * dt * 1.3);
-  ship.thrusterLag += (ship.thrusterCmd - ship.thrusterLag) * dt * 1.8;
+  stepState(ship, activeScenario, dt, tSeconds, true);
 
-  const { ax, ay, yawAcc } = getForces(ship, activeScenario, tSeconds);
-
-  ship.vx += ax * dt;
-  ship.vy += ay * dt;
-  ship.yawRate += yawAcc * dt;
-  ship.x += ship.vx * dt * PX_PER_M;
-  ship.y += ship.vy * dt * PX_PER_M;
-  ship.heading += ship.yawRate * dt;
-
-  const lowSpeedYawBrake = clamp(1 - Math.hypot(ship.vx, ship.vy) / 1.8, 0, 1);
-  ship.yawRate *= 1 - (0.002 + lowSpeedYawBrake * 0.016);
-
-  ship.vx *= 0.999;
-  ship.vy *= 0.999;
-
+  const bouncedX = ship.x <= 20 || ship.x >= canvas.width - 20;
+  const bouncedY = ship.y <= 20 || ship.y >= canvas.height - 20;
   ship.x = clamp(ship.x, 20, canvas.width - 20);
   ship.y = clamp(ship.y, 20, canvas.height - 20);
+  if (bouncedX) ship.u *= -0.18;
+  if (bouncedY) ship.v *= -0.18;
 
   for (const v of traffic) {
     v.x += v.vx;
@@ -244,32 +315,44 @@ function integrate(dt, tSeconds) {
   evaluateDocking(Math.hypot(ship.vx, ship.vy));
 }
 
-function evaluateDocking(speedMS) {
+function getBerthOffset() {
   const berth = activeScenario.berth;
   const dx = ship.x - berth.x;
   const dy = ship.y - berth.y;
   const c = Math.cos(-degToRad(berth.hdg));
   const s = Math.sin(-degToRad(berth.hdg));
-  const localX = c * dx - s * dy;
-  const localY = s * dx + c * dy;
+  return {
+    localX: (c * dx - s * dy) / PX_PER_M,
+    localY: (s * dx + c * dy) / PX_PER_M
+  };
+}
 
-  const withinLong = Math.abs(localX) < berth.length * 0.43;
-  const closeLat = Math.abs(localY) < berth.width * 0.62;
+function evaluateDocking(speedMS) {
+  const berth = activeScenario.berth;
+  const { localX, localY } = getBerthOffset();
+  const berthLengthM = berth.length / PX_PER_M;
+  const berthWidthM = berth.width / PX_PER_M;
+
+  const withinLong = Math.abs(localX) < berthLengthM * 0.43;
+  const closeLat = Math.abs(localY) < berthWidthM * 0.62;
   const headingErr = Math.abs((((radToDeg(ship.heading) - berth.hdg) + 540) % 360) - 180);
-  const speedKts = speedMS * 1.94384;
+  const speedKts = speedMS * MS_TO_KNOT;
+  const lateralSpeedKts = Math.abs(ship.v) * MS_TO_KNOT;
+  const rotOk = Math.abs(radToDeg(ship.yawRate) * 60) < 2.5;
 
-  if (withinLong && closeLat && speedKts < 0.3 && headingErr < 5 && !dockingScored) {
-    const lateralScore = clamp(100 - Math.abs(localY) * 2.2, 0, 100);
+  if (withinLong && closeLat && speedKts < 0.3 && lateralSpeedKts < 0.18 && headingErr < 5 && rotOk && !dockingScored) {
+    const lateralScore = clamp(100 - Math.abs(localY) * 3.0, 0, 100);
     const headingScore = clamp(100 - headingErr * 10, 0, 100);
-    const speedScore = clamp(100 - speedKts * 180, 0, 100);
-    const total = (lateralScore * 0.45 + headingScore * 0.35 + speedScore * 0.2).toFixed(1);
+    const speedScore = clamp(100 - speedKts * 180 - lateralSpeedKts * 130, 0, 100);
+    const rotScore = clamp(100 - Math.abs(radToDeg(ship.yawRate) * 60) * 22, 0, 100);
+    const total = (lateralScore * 0.35 + headingScore * 0.28 + speedScore * 0.25 + rotScore * 0.12).toFixed(1);
     scoreText.textContent = `Score: ${total}/100`;
     dockingScored = true;
     statusText.textContent = Number(total) > 85
       ? 'Excellent controlled landing. Proceed with mooring lines.'
-      : 'Docking achieved. Review approach profile and force balancing.';
+      : 'Docking achieved. Review approach profile, leeway, and rate-of-turn control.';
   } else if (!dockingScored) {
-    statusText.textContent = 'Target: speed < 0.3 kn, heading error < 5°, lateral offset < 15 m';
+    statusText.textContent = 'Target: SOG < 0.3 kn, sideways speed < 0.18 kn, ROT < 2.5°/min, heading error < 5°.';
   }
 }
 
@@ -339,15 +422,7 @@ function drawTrafficVessel(v) {
 function drawPredictedTrack() {
   const predictionState = {
     ...ship,
-    x: ship.x,
-    y: ship.y,
-    heading: ship.heading,
-    vx: ship.vx,
-    vy: ship.vy,
-    yawRate: ship.yawRate,
-    thrustLag: ship.thrustLag,
-    podAngleLag: ship.podAngleLag,
-    thrusterLag: ship.thrusterLag
+    lastForces: null
   };
 
   ctx.save();
@@ -357,15 +432,9 @@ function drawPredictedTrack() {
   ctx.beginPath();
   ctx.moveTo(predictionState.x, predictionState.y);
 
-  const dt = 0.4;
+  const dt = 0.6;
   for (let i = 0; i < 45; i += 1) {
-    const { ax, ay, yawAcc } = getForces(predictionState, activeScenario, i * dt);
-    predictionState.vx += ax * dt;
-    predictionState.vy += ay * dt;
-    predictionState.yawRate += yawAcc * dt;
-    predictionState.x += predictionState.vx * dt * PX_PER_M;
-    predictionState.y += predictionState.vy * dt * PX_PER_M;
-    predictionState.heading += predictionState.yawRate * dt;
+    stepState(predictionState, activeScenario, dt, performance.now() / 1000 + i * dt, false);
     ctx.lineTo(predictionState.x, predictionState.y);
   }
   ctx.stroke();
@@ -455,27 +524,45 @@ function drawShip() {
 }
 
 function updateInstruments(tSeconds) {
-  const speedKts = Math.hypot(ship.vx, ship.vy) * 1.94384;
+  const speedKts = Math.hypot(ship.vx, ship.vy) * MS_TO_KNOT;
+  const stwKts = Math.hypot(ship.u, ship.v) * MS_TO_KNOT;
   const heading = ((radToDeg(ship.heading) % 360) + 360) % 360;
+  const cog = ((radToDeg(Math.atan2(ship.vy, ship.vx)) % 360) + 360) % 360;
   const yawRateDegMin = radToDeg(ship.yawRate) * 60;
+  const leeway = radToDeg(Math.atan2(ship.v, Math.max(0.05, Math.abs(ship.u)))) * Math.sign(ship.u || 1);
 
   const berth = activeScenario.berth;
-  const dx = ship.x - berth.x;
-  const dy = ship.y - berth.y;
-  const distM = Math.hypot(dx, dy) / PX_PER_M;
-  const { windKtsDynamic } = getForces(ship, activeScenario, tSeconds);
+  const { localX, localY } = getBerthOffset();
+  const headingErr = normalizeAngleDeg(heading - berth.hdg);
+  const depth = depthFactors(ship, activeScenario);
+  const model = ship.lastForces || getForces(ship, activeScenario, tSeconds);
 
   const data = [
-    ['Heading', `${heading.toFixed(1)}°`],
-    ['SOG', `${speedKts.toFixed(2)} kn`],
+    ['Heading / COG', `${heading.toFixed(1)}° / ${cog.toFixed(1)}°`],
+    ['SOG / STW', `${speedKts.toFixed(2)} kn / ${stwKts.toFixed(2)} kn`],
+    ['Surge / Sway', `${(ship.u * MS_TO_KNOT).toFixed(2)} kn / ${(ship.v * MS_TO_KNOT).toFixed(2)} kn`],
     ['Rate of Turn', `${yawRateDegMin.toFixed(1)} °/min`],
-    ['Distance to Berth C/L', `${distM.toFixed(0)} m`],
-    ['Azipod Angle', `${ship.podAngleLag.toFixed(1)}°`],
-    ['Wind', `${windKtsDynamic.toFixed(1)} kn @ ${activeScenario.windDirDeg}°`],
-    ['Current', `${activeScenario.currentKts.toFixed(1)} kn @ ${activeScenario.currentDirDeg}°`]
+    ['Leeway Angle', `${leeway.toFixed(1)}°`],
+    ['Berth Offset L/T', `${localX.toFixed(0)} m / ${localY.toFixed(0)} m`],
+    ['Heading Error', `${headingErr.toFixed(1)}°`],
+    ['Azipod Actual', `${ship.podAngleLag.toFixed(1)}° @ ${ship.thrustLag.toFixed(0)}%`],
+    ['Bow Thruster Loss', `${(model.thrusterVentilationLoss * 100).toFixed(0)}%`],
+    ['Wind', `${model.windKtsDynamic.toFixed(1)} kn @ ${activeScenario.windDirDeg}°`],
+    ['Current Set/Drift', `${activeScenario.currentDirDeg}° / ${activeScenario.currentKts.toFixed(1)} kn`],
+    ['Depth / UKC', `${activeScenario.waterDepthM.toFixed(1)} m / ${depth.ukcM.toFixed(1)} m`],
+    ['h/T / Squat', `${depth.depthDraftRatio.toFixed(2)} / ${depth.squatM.toFixed(2)} m`],
+    ['Bank Effect', `${(model.bankFactor * 100).toFixed(0)}%`]
   ];
 
   instruments.innerHTML = data.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+  if (modelNotes) {
+    modelNotes.innerHTML = [
+      `3-DOF model: surge, sway, yaw with added mass/inertia.`,
+      `Hull: nonlinear damping + crossflow yaw coupling.`,
+      `Environment: apparent wind, current set/drift, shallow-water damping, squat, bank suction.`,
+      `Validation targets shown in README: IMO turning, zig-zag, and stopping criteria.`
+    ].map((note) => `<li>${note}</li>`).join('');
+  }
 }
 
 function frame(ts) {
