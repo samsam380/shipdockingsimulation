@@ -47,6 +47,10 @@ For a specific vessel, replace the generic cruise-ship constants in `app.js` wit
 6. Environmental scenario: current set/drift, wind direction/speed/gusting, depth, UKC, quay/bank geometry.
 7. Validation outcomes: 35° turning circle advance/tactical diameter, 10°/10° and 20°/20° zig-zag overshoot, stopping track reach, and pilot/officer qualitative handling review.
 
+## Codeword drill
+
+The sidebar includes a reusable Harbor Codeword Drill for clue-based word practice. It starts with several nautical words instead of only `dawn`, lets players add or update their own clue/word pairs, saves the bank in browser `localStorage`, and runs the brute-force animation against every saved word for the selected clue.
+
 ## Training scope
 
 This is an educational and procedural familiarization tool. It does **not** replace class-approved full-mission bridge simulators, SMS procedures, pilotage requirements, company-specific training programs, or vessel-specific maneuvering booklets.
