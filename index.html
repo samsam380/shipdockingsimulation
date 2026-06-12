@@ -74,6 +74,48 @@
         <p id="statusText">Approach berth at &lt; 0.3 kn, low sideways speed, ROT &lt; 2.5°/min, heading error &lt; 5°.</p>
         <p id="scoreText">Score: --</p>
       </div>
+
+      <div class="card codeword-card">
+        <h2>Harbor Codeword Drill</h2>
+        <p class="helper-text">Add clue/word pairs, choose any clue, then run a reusable dictionary-style brute-force drill across the full word bank.</p>
+
+        <div class="codeword-target" aria-live="polite">
+          <span class="eyebrow">Active clue</span>
+          <strong id="clueText">Loading…</strong>
+          <span id="answerMask" class="answer-mask">----</span>
+        </div>
+
+        <label>Choose Clue
+          <select id="codewordSelect"></select>
+        </label>
+
+        <div class="bruteforce-controls">
+          <button id="startBruteforceBtn" type="button">Brute Force Word Bank</button>
+          <button id="nextClueBtn" type="button" class="secondary-button">Next Clue</button>
+        </div>
+
+        <div class="attempt-meter" aria-label="Brute force progress">
+          <span id="attemptProgress"></span>
+        </div>
+        <p id="bruteforceStatus" class="bruteforce-status">Ready: add more words or start the drill.</p>
+        <ol id="attemptLog" class="attempt-log"></ol>
+
+        <form id="codewordForm" class="codeword-form">
+          <label>New Clue
+            <input id="newClueInput" type="text" maxlength="80" placeholder="e.g. Harbor light before sunrise" required />
+          </label>
+          <label>Word to brute force
+            <input id="newWordInput" type="text" maxlength="24" placeholder="e.g. beacon" autocomplete="off" required />
+          </label>
+          <button type="submit">Add Word</button>
+        </form>
+
+        <div class="word-bank-header">
+          <span id="wordBankCount">0 words</span>
+          <button id="restoreWordsBtn" type="button" class="link-button">Restore defaults</button>
+        </div>
+        <ul id="wordBankList" class="word-bank-list"></ul>
+      </div>
     </section>
   </main>
 

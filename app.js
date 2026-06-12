@@ -13,6 +13,20 @@ const instruments = document.getElementById('instruments');
 const statusText = document.getElementById('statusText');
 const scoreText = document.getElementById('scoreText');
 const modelNotes = document.getElementById('modelNotes');
+const clueText = document.getElementById('clueText');
+const answerMask = document.getElementById('answerMask');
+const codewordSelect = document.getElementById('codewordSelect');
+const startBruteforceBtn = document.getElementById('startBruteforceBtn');
+const nextClueBtn = document.getElementById('nextClueBtn');
+const attemptProgress = document.getElementById('attemptProgress');
+const bruteforceStatus = document.getElementById('bruteforceStatus');
+const attemptLog = document.getElementById('attemptLog');
+const codewordForm = document.getElementById('codewordForm');
+const newClueInput = document.getElementById('newClueInput');
+const newWordInput = document.getElementById('newWordInput');
+const wordBankCount = document.getElementById('wordBankCount');
+const restoreWordsBtn = document.getElementById('restoreWordsBtn');
+const wordBankList = document.getElementById('wordBankList');
 
 const PX_PER_M = 1.3;
 const KNOT_TO_MS = 0.514444;
@@ -109,6 +123,26 @@ const ship = {
 let activeScenario = scenarios[0];
 let traffic = [];
 let dockingScored = false;
+
+const CODEWORD_STORAGE_KEY = 'shipDockingCodewordBank';
+const DEFAULT_CODEWORDS = [
+  { clue: 'First light over the harbor entrance', word: 'dawn' },
+  { clue: 'Small guide boat meeting a vessel outside port', word: 'pilot' },
+  { clue: 'Protected water where ships wait to berth', word: 'harbor' },
+  { clue: 'Floating marker that keeps the channel edge visible', word: 'buoy' },
+  { clue: 'Line used to secure the ship alongside', word: 'mooring' },
+  { clue: 'Sideways movement caused by wind or current', word: 'leeway' }
+];
+
+const codewordGame = {
+  words: [],
+  activeIndex: 0,
+  isRunning: false,
+  attemptIndex: 0,
+  candidates: [],
+  timerId: null,
+  lastAttempts: []
+};
 
 function degToRad(d) { return (d * Math.PI) / 180; }
 function radToDeg(r) { return (r * 180) / Math.PI; }
@@ -565,6 +599,239 @@ function updateInstruments(tSeconds) {
   }
 }
 
+function normalizeCodewordWord(value) {
+  return value.toLowerCase().trim().replace(/[^a-z0-9-]/g, '');
+}
+
+function createStoredCodeword(clue, word) {
+  return {
+    clue: clue.trim().replace(/\s+/g, ' '),
+    word: normalizeCodewordWord(word)
+  };
+}
+
+function getSavedCodewords() {
+  const saved = localStorage.getItem(CODEWORD_STORAGE_KEY);
+  if (!saved) return DEFAULT_CODEWORDS.map((item) => ({ ...item }));
+
+  try {
+    const parsed = JSON.parse(saved);
+    const valid = parsed
+      .map((item) => createStoredCodeword(String(item.clue || ''), String(item.word || '')))
+      .filter((item) => item.clue && item.word);
+    return valid.length ? valid : DEFAULT_CODEWORDS.map((item) => ({ ...item }));
+  } catch (error) {
+    console.warn('Could not parse saved codeword bank. Restoring defaults.', error);
+    return DEFAULT_CODEWORDS.map((item) => ({ ...item }));
+  }
+}
+
+function saveCodewords() {
+  localStorage.setItem(CODEWORD_STORAGE_KEY, JSON.stringify(codewordGame.words));
+}
+
+function activeCodeword() {
+  return codewordGame.words[codewordGame.activeIndex] || null;
+}
+
+function maskCodeword(word, reveal = false) {
+  if (reveal) return word.toUpperCase();
+  return word.replace(/[a-z0-9]/gi, '•').toUpperCase();
+}
+
+function makeCandidateList(targetWord) {
+  const seen = new Set();
+  const candidates = [];
+  for (const item of codewordGame.words) {
+    if (seen.has(item.word)) continue;
+    seen.add(item.word);
+    candidates.push(item.word);
+  }
+  if (targetWord && !seen.has(targetWord)) candidates.push(targetWord);
+  return candidates.sort((a, b) => a.length - b.length || a.localeCompare(b));
+}
+
+function setAttemptProgress(ratio) {
+  attemptProgress.style.width = `${clamp(ratio, 0, 1) * 100}%`;
+}
+
+function renderAttemptLog() {
+  attemptLog.innerHTML = '';
+  for (const attempt of codewordGame.lastAttempts.slice(-8).reverse()) {
+    const item = document.createElement('li');
+    item.className = attempt.found ? 'found-attempt' : '';
+    item.textContent = attempt.found ? `✓ ${attempt.word}` : attempt.word;
+    attemptLog.append(item);
+  }
+}
+
+function renderWordBank() {
+  wordBankList.innerHTML = '';
+  wordBankCount.textContent = `${codewordGame.words.length} ${codewordGame.words.length === 1 ? 'word' : 'words'}`;
+
+  codewordGame.words.forEach((entry, index) => {
+    const item = document.createElement('li');
+    if (index === codewordGame.activeIndex) item.classList.add('active-word');
+
+    const detail = document.createElement('span');
+    detail.textContent = `${entry.word.toUpperCase()} — ${entry.clue}`;
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'link-button danger-link';
+    remove.dataset.removeCodeword = String(index);
+    remove.textContent = 'Remove';
+    remove.disabled = codewordGame.words.length <= 1;
+
+    item.append(detail, remove);
+    wordBankList.append(item);
+  });
+}
+
+function renderCodewordSelect() {
+  codewordSelect.innerHTML = '';
+  codewordGame.words.forEach((entry, index) => {
+    const option = document.createElement('option');
+    option.value = String(index);
+    option.textContent = `${index + 1}. ${entry.clue}`;
+    codewordSelect.append(option);
+  });
+  codewordSelect.value = String(codewordGame.activeIndex);
+}
+
+function renderCodewordGame({ reveal = false } = {}) {
+  const current = activeCodeword();
+  if (!current) return;
+
+  clueText.textContent = current.clue;
+  answerMask.textContent = `${maskCodeword(current.word, reveal)} (${current.word.length})`;
+  renderCodewordSelect();
+  renderWordBank();
+  renderAttemptLog();
+}
+
+function stopBruteforce(message = 'Stopped. Choose a clue or add more words to continue.') {
+  window.clearInterval(codewordGame.timerId);
+  codewordGame.timerId = null;
+  codewordGame.isRunning = false;
+  startBruteforceBtn.textContent = 'Brute Force Word Bank';
+  bruteforceStatus.textContent = message;
+}
+
+function finishBruteforce(foundWord) {
+  stopBruteforce(`Unlocked “${foundWord.toUpperCase()}” after ${codewordGame.attemptIndex} ${codewordGame.attemptIndex === 1 ? 'attempt' : 'attempts'}.`);
+  setAttemptProgress(1);
+  renderCodewordGame({ reveal: true });
+}
+
+function stepBruteforce() {
+  const current = activeCodeword();
+  if (!current) {
+    stopBruteforce('No codeword is available. Add a clue and word to start.');
+    return;
+  }
+
+  if (codewordGame.attemptIndex >= codewordGame.candidates.length) {
+    stopBruteforce(`No match found after ${codewordGame.candidates.length} attempts. Add the missing word and try again.`);
+    return;
+  }
+
+  const candidate = codewordGame.candidates[codewordGame.attemptIndex];
+  codewordGame.attemptIndex += 1;
+  const found = candidate === current.word;
+  codewordGame.lastAttempts.push({ word: candidate, found });
+  setAttemptProgress(codewordGame.attemptIndex / codewordGame.candidates.length);
+  bruteforceStatus.textContent = `Trying ${candidate.toUpperCase()} (${codewordGame.attemptIndex}/${codewordGame.candidates.length})…`;
+  renderAttemptLog();
+
+  if (found) finishBruteforce(candidate);
+}
+
+function startBruteforce() {
+  if (codewordGame.isRunning) {
+    stopBruteforce('Paused brute-force drill.');
+    return;
+  }
+
+  const current = activeCodeword();
+  if (!current) return;
+
+  codewordGame.isRunning = true;
+  codewordGame.attemptIndex = 0;
+  codewordGame.candidates = makeCandidateList(current.word);
+  codewordGame.lastAttempts = [];
+  startBruteforceBtn.textContent = 'Pause Brute Force';
+  setAttemptProgress(0);
+  renderCodewordGame();
+  bruteforceStatus.textContent = `Scanning ${codewordGame.candidates.length} saved ${codewordGame.candidates.length === 1 ? 'word' : 'words'} for this clue…`;
+  stepBruteforce();
+  if (codewordGame.isRunning) {
+    codewordGame.timerId = window.setInterval(stepBruteforce, 450);
+  }
+}
+
+function chooseCodeword(index) {
+  stopBruteforce('Ready: selected clue loaded.');
+  codewordGame.activeIndex = clamp(index, 0, codewordGame.words.length - 1);
+  codewordGame.lastAttempts = [];
+  setAttemptProgress(0);
+  renderCodewordGame();
+}
+
+function addCodeword(clue, word) {
+  const entry = createStoredCodeword(clue, word);
+  if (!entry.clue || !entry.word) {
+    bruteforceStatus.textContent = 'Enter a clue and a word using letters, numbers, or hyphens.';
+    return;
+  }
+
+  const existingIndex = codewordGame.words.findIndex((item) => item.word === entry.word);
+  if (existingIndex >= 0) {
+    codewordGame.words[existingIndex] = entry;
+    codewordGame.activeIndex = existingIndex;
+    bruteforceStatus.textContent = `Updated ${entry.word.toUpperCase()} and loaded it as the active clue.`;
+  } else {
+    codewordGame.words.push(entry);
+    codewordGame.activeIndex = codewordGame.words.length - 1;
+    bruteforceStatus.textContent = `Added ${entry.word.toUpperCase()} to the brute-force word bank.`;
+  }
+
+  saveCodewords();
+  codewordGame.lastAttempts = [];
+  setAttemptProgress(0);
+  renderCodewordGame();
+}
+
+function removeCodeword(index) {
+  if (codewordGame.words.length <= 1) {
+    bruteforceStatus.textContent = 'Keep at least one word in the bank.';
+    return;
+  }
+
+  const removed = codewordGame.words.splice(index, 1)[0];
+  codewordGame.activeIndex = clamp(codewordGame.activeIndex, 0, codewordGame.words.length - 1);
+  saveCodewords();
+  chooseCodeword(codewordGame.activeIndex);
+  bruteforceStatus.textContent = `Removed ${removed.word.toUpperCase()} from the word bank.`;
+}
+
+function restoreDefaultCodewords() {
+  stopBruteforce('Defaults restored. Add your own words whenever you want.');
+  codewordGame.words = DEFAULT_CODEWORDS.map((item) => ({ ...item }));
+  codewordGame.activeIndex = 0;
+  codewordGame.lastAttempts = [];
+  saveCodewords();
+  setAttemptProgress(0);
+  renderCodewordGame();
+}
+
+function initCodewordGame() {
+  if (!clueText) return;
+  codewordGame.words = getSavedCodewords();
+  renderCodewordGame();
+  setAttemptProgress(0);
+}
+
 function frame(ts) {
   if (!frame.last) frame.last = ts;
   const dt = Math.min((ts - frame.last) / 1000, 0.05);
@@ -593,8 +860,24 @@ bindControl(thrusterInput, (v) => { ship.thrusterCmd = v; });
 scenarioSelect.addEventListener('change', resetScenario);
 resetBtn.addEventListener('click', resetScenario);
 
+startBruteforceBtn.addEventListener('click', startBruteforce);
+nextClueBtn.addEventListener('click', () => chooseCodeword((codewordGame.activeIndex + 1) % codewordGame.words.length));
+codewordSelect.addEventListener('change', () => chooseCodeword(Number(codewordSelect.value)));
+restoreWordsBtn.addEventListener('click', restoreDefaultCodewords);
+codewordForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  addCodeword(newClueInput.value, newWordInput.value);
+  codewordForm.reset();
+  newClueInput.focus();
+});
+wordBankList.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-remove-codeword]');
+  if (!button) return;
+  removeCodeword(Number(button.dataset.removeCodeword));
+});
+
 window.addEventListener('keydown', (e) => {
-  if (e.repeat) return;
+  if (e.repeat || ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(e.target.tagName)) return;
   if (e.key.toLowerCase() === 'w') ship.thrustCmd = clamp(ship.thrustCmd + 10, -100, 100);
   if (e.key.toLowerCase() === 's') ship.thrustCmd = clamp(ship.thrustCmd - 10, -100, 100);
   if (e.key.toLowerCase() === 'a') ship.podAngleCmd = normalizeAngleDeg(ship.podAngleCmd - 5);
@@ -612,6 +895,7 @@ window.addEventListener('keydown', (e) => {
   setOutputs();
 });
 
+initCodewordGame();
 resetScenario();
 setOutputs();
 requestAnimationFrame(frame);
